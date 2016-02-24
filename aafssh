@@ -1,0 +1,91 @@
+#!/usr/bin/python
+import subprocess
+import re
+def get_access_token(url):
+    p=subprocess.Popen(['node_modules/electron-prebuilt/dist/electron','app','--oauthurl=%s'%url],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (stdout,stderr)=p.communicate()
+    regex='^access_token: (?P<access_token>.*)$'
+    for line in stdout.splitlines():
+        m=re.search(regex,line)
+        if m:
+            auth_token=m.groupdict()['access_token']
+            return auth_token
+
+def create_keypair(passphrase,path):
+
+    p=subprocess.Popen(['ssh-keygen','-t','rsa','-f',path,'-P',passphrase],stdout=None,stderr=None,stdin=subprocess.PIPE)
+    p.communicate('y\n')
+    with open(path+".pub",'r') as f:
+        pubkey=f.readlines()
+    return pubkey[0].rstrip()
+
+def get_cert(access_token,pub_key,url):
+    import requests
+    import json
+    s=requests.Session()
+    headers = {"Authorization":"Bearer %s"%access_token}
+    data={"public_key":pub_key}
+    r=s.post(url,json=data,headers=headers,verify=False)
+    d=r.json()
+    return d['certificate']
+
+def get_urls(host):
+    if "massive" in host:
+        return {'signing_url':"https://autht.massive.org.au/api/v1/sign_key",'login_host':host,'oauth2_url':"https://autht.massive.org.au/oauth/authorize?response_type=token&redirect_uri=http://localhost:5000/sshauthz_callback&state=anything-you-want&client_id=86c06039-e589-4b39-9d1f-9eca431be18f"}
+    else: 
+        return None
+
+def start_agent():
+    import os
+    p=subprocess.Popen(['ssh-agent'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (stdout,stderr)=p.communicate()
+    for line in stdout.splitlines():
+        match = re.search("^SSH_AUTH_SOCK=(?P<socket>.*?); export SSH_AUTH_SOCK;$",line)
+        if match:
+            agentenv = match.group('socket')
+            os.environ['SSH_AUTH_SOCK'] = agentenv
+        match2 = re.search("^SSH_AGENT_PID=(?P<pid>[0-9]+);.*$",line)
+        if match2:
+            pid = match2.group('pid')
+            os.environ['SSH_AGENT_PID'] = pid
+
+def add_key(passphrase,path):
+    p=subprocess.Popen(['ssh-add',path],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (stdout,stderr)=p.communicate()
+
+def get_principals(path):
+    p=subprocess.Popen(['ssh-keygen','-L','-f',path+"-cert.pub"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (stdout,stderr)=p.communicate()
+    inPrincipals=False
+    principals=[]
+    for line in stdout.splitlines():
+        if inPrincipals:
+            principals.append(line.strip())
+        if "Principals" in line:
+            inPrincipals=True
+        if "Critical Options" in line:
+            inPrincipals=False
+    return principals
+
+def main():
+    import os
+    import sys
+    keypath="./tmpkey"
+    passphrase=""
+    host=sys.argv[1]
+    urls=get_urls(host)
+    if urls==None:
+        print "The system you're trying to use is unknown to aafssh"
+        sys.exit(-1)
+    access_token=get_access_token(urls['oauth2_url'])
+    pubkey=create_keypair(passphrase,keypath)
+    cert=get_cert(access_token,pubkey,urls['signing_url'])
+    with open(keypath+"-cert.pub","w+") as f:
+        f.write(cert)
+    username=get_principals(keypath)[0]
+    start_agent()
+    add_key(passphrase,keypath)
+    os.execv("/usr/bin/ssh",["ssh","-l",username,urls['login_host']])
+
+
+main()
