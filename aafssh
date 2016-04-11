@@ -32,6 +32,8 @@ def get_cert(access_token,pub_key,url):
 def get_urls(host):
     if "massive" in host:
         return {'signing_url':"https://autht.massive.org.au/api/v1/sign_key",'login_host':host,'oauth2_url':"https://autht.massive.org.au/oauth/authorize?response_type=token&redirect_uri=http://localhost:5000/sshauthz_callback&state=anything-you-want&client_id=86c06039-e589-4b39-9d1f-9eca431be18f"}
+    elif "autocreate" in host: 
+        return {'signing_url':"https://autht.massive.org.au/autocreateldap/api/v1/sign_key",'login_host':'144.6.229.254','oauth2_url':"https://autht.massive.org.au/aaf_autocreate/createuser?response_type=token&redirect_uri=http://localhost:5000/sshauthz_callback&state=anything-you-want&client_id=86c06039-e589-4b39-9d1f-9eca431be18f"}
     else: 
         return None
 
